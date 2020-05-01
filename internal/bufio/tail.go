@@ -2,49 +2,52 @@ package bufio
 
 type RotatingTail struct {
 	l int
-	b []byte // working tail buffer
+
+	b  []byte // working tail buffer
+	nb int
+
 	d []byte // discarded from b on last Append
 }
 
 func NewRotatingTail(length int) *RotatingTail {
-	return &RotatingTail{l: length}
+	return &RotatingTail{
+		l: length,
+		b: make([]byte, length),
+		d: make([]byte, length),
+	}
 }
 
-func (t *RotatingTail) Bytes() []byte { return t.b }
+func (t *RotatingTail) Bytes() []byte { return t.b[:t.nb] }
 
 func (t *RotatingTail) Append(b []byte) (discarded, head []byte) {
 	nb := len(b)
-	nd := t.l
-	if nd > nb {
-		nd = nb
+	n := t.l
+	if n > nb {
+		n = nb
 	}
-	is := nb - nd
+	is := nb - n
 	var tail []byte
-	head, tail = b[:is], b[is:nb]
+	head, tail = b[:is], b[is:]
 
-	if nd == t.l {
-		t.d = copyLazyAlloc(t.d, t.b, t.l)
-		t.b = copyLazyAlloc(t.b, tail, t.l)
-		discarded = t.d
-		return
+	nd := n
+	if nd > t.nb {
+		nd = t.nb
 	}
-
-	t.d = copyLazyAlloc(t.d, t.b[:nd], t.l)
-	for i := 0; i < nd; i++ {
-		t.b[i] = t.b[i+1]
+	if t.nb+n <= t.l {
+		nd = 0
 	}
-	t.b = copyLazyAlloc(t.b[nd:], tail, t.l)
+	copy(t.d, t.b[:nd])
 	discarded = t.d[:nd]
-	return
-}
 
-func copyLazyAlloc(dst, src []byte, l int) []byte {
-	if len(src) == 0 {
-		return dst
+	if nd > 0 {
+		copy(t.b, t.b[nd:])
+		t.nb -= nd
 	}
-	if dst == nil {
-		dst = make([]byte, l)
+	if t.nb+n <= t.l {
+		copy(t.b[t.nb:], tail)
+	} else {
+		copy(t.b, tail)
 	}
-	copy(dst, src)
-	return dst
+	t.nb += n
+	return
 }
